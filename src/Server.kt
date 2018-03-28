@@ -14,7 +14,7 @@ class Server {
     private lateinit var cookieMap: MutableMap<String, String>
 
     private fun processHeader (reader: BufferedReader) {
-        val msg = reader.readLine()
+        val firstLine = reader.readLine()
         var header = reader.readLine()
 
         while (reader.ready()) {
@@ -26,8 +26,8 @@ class Server {
         this.headerMap = mutableMapOf()
         this.cookieMap = mutableMapOf()
 
-        val a = header.split("\n")
-        a.map { it: String -> it.split(": ") }
+        val hspt= header.split("\n")
+        hspt.map { it: String -> it.split(": ") }
                 .forEach { if (it.size > 1) {
                         if (it[0] == "Cookie") {
                             val sp1 = it[1].split(";")
@@ -40,7 +40,7 @@ class Server {
                     }
                 }
 
-        val splm = msg.split(" ")
+        val splm = firstLine.split(" ")
         this.resourcePath = splm[1]
         this.method = Method.valueOf(splm[0])
     }
@@ -65,7 +65,7 @@ class Server {
 
     private fun responseGet (writer: BufferedWriter) {
         val file = File("C:/"+this.resourcePath)
-        //file = File("C:/Users/Lucas/Desktop/LeBoidAvidyaizumi/0UTFPR/8/web/Socket/src/test.txt")
+        //file = File("C:/Users/Lucas/Desktop/LeBoidAvidyaizumi/0UTFPR/8/web/Socket/src/test.html")
 
         val count = getCookie()
         if (!file.exists() || this.resourcePath == "/") {
