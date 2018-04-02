@@ -13,7 +13,7 @@ class Server {
     private lateinit var method: Method
     private lateinit var cookieMap: MutableMap<String, String>
 
-    private fun processHeader (reader: BufferedReader) {
+    private fun processHeader(reader: BufferedReader) {
         val firstLine = reader.readLine()
         var header = reader.readLine()
 
@@ -45,7 +45,7 @@ class Server {
         this.method = Method.valueOf(splm[0])
     }
 
-    private fun getCookie (): String {
+    private fun getCookie(): String {
         if (cookieMap.isEmpty()){
             return "count=1"
         } else {
@@ -63,16 +63,22 @@ class Server {
         return "count=1"
     }
 
-    private fun responseGet (writer: BufferedWriter) {
-        val file = File("C:/"+this.resourcePath)
+    private fun responseGet(writer: BufferedWriter) {
+        val file = File("C:"+this.resourcePath)
         //file = File("C:/Users/Lucas/Desktop/LeBoidAvidyaizumi/0UTFPR/8/web/Socket/src/test.html")
-
+        //print(file.listFiles().size)
         val count = getCookie()
         if (!file.exists() || this.resourcePath == "/") {
             writer.write("HTTP/1.1 404\r\n")
             writer.write("Set-Cookie: $count;\r\n\r\n")
 
             writer.write("ERRO: Arquivo nao encotrado")
+        } else if (file.isDirectory) {
+            writer.write("HTTP/1.1 200 \r\n")
+            writer.write("Set-Cookie: $count;\r\n\r\n")
+            for (item in file.listFiles()) {
+                writer.write(item.toString() + "\n")
+            }
         } else {
             writer.write("HTTP/1.1 200 \r\n")
             writer.write("Set-Cookie: $count;\r\n\r\n")
