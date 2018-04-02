@@ -63,6 +63,25 @@ class Server {
         return "count=1"
     }
 
+    private fun fileList(directory: File): List<String> {
+        val fileList = mutableListOf<String>()
+
+        var filePath = directory.toString()
+        var init = filePath.lastIndexOf("\\")
+        var fileName =  filePath.substring(init + 1)
+        fileList.add(fileName)
+
+        for (file in directory.listFiles()) {
+            filePath = file.toString()
+            init = filePath.lastIndexOf("\\")
+            //print("\n\nCAMINHO DO NARA\n\n")
+            //print(filePath + "\n\n")
+            fileName = filePath.substring(init + 1)
+            fileList.add(fileName)
+        }
+        return fileList
+    }
+
     private fun responseGet(writer: BufferedWriter) {
         val file = File("C:"+this.resourcePath)
         //file = File("C:/Users/Lucas/Desktop/LeBoidAvidyaizumi/0UTFPR/8/web/Socket/src/test.html")
@@ -76,8 +95,11 @@ class Server {
         } else if (file.isDirectory) {
             writer.write("HTTP/1.1 200 \r\n")
             writer.write("Set-Cookie: $count;\r\n\r\n")
-            for (item in file.listFiles()) {
-                writer.write(item.toString() + "\n")
+
+            val fileList = fileList(file)
+            writer.write("Arquivos de " + fileList[0] + ":\n")
+            for (i in 1..(fileList.size - 1)) {
+                writer.write("/" + fileList[i] + "\n")
             }
         } else {
             writer.write("HTTP/1.1 200 \r\n")
