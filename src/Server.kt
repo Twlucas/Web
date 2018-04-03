@@ -45,7 +45,7 @@ class Server {
         this.method = Method.valueOf(splm[0])
     }
 
-    private fun getCookie(): String {
+    private fun processCookies(): String {
         if (cookieMap.isEmpty()){
             return "count=1"
         } else {
@@ -86,13 +86,16 @@ class Server {
         val file = File("C:"+this.resourcePath)
         //file = File("C:/Users/Lucas/Desktop/LeBoidAvidyaizumi/0UTFPR/8/web/Socket/src/test.html")
         //print(file.listFiles().size)
-        val count = getCookie()
+        val count = processCookies()
+        writer.write("HTTP/1.1 401\r\n")
+        writer.write("WWW-Authenticate: Basic realm=Test\r\n")
         if (!file.exists() || this.resourcePath == "/") {
             writer.write("HTTP/1.1 404\r\n")
             writer.write("Set-Cookie: $count;\r\n\r\n")
 
             writer.write("ERRO: Arquivo nao encotrado")
         } else if (file.isDirectory) {
+            //file.listFiles()
             writer.write("HTTP/1.1 200 \r\n")
             writer.write("Set-Cookie: $count;\r\n\r\n")
 
