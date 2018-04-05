@@ -13,6 +13,7 @@ class Server {
     private lateinit var method: Method
     private lateinit var cookieMap: MutableMap<String, String>
 
+
     private fun processHeader(reader: BufferedReader) {
         val firstLine = reader.readLine()
         var header = reader.readLine()
@@ -21,7 +22,7 @@ class Server {
             header += "\n"
             header += reader.readLine()
         }
-        print(header)
+        print("\nHEADER: " + header)
 
         this.headerMap = mutableMapOf()
         this.cookieMap = mutableMapOf()
@@ -82,28 +83,42 @@ class Server {
         return fileList
     }
 
-    private fun responseGet(writer: BufferedWriter) {
+    private fun responseGet(writer: BufferedWriter/*, reader: BufferedReader*/) {
         val file = File("C:"+this.resourcePath)
         //file = File("C:/Users/Lucas/Desktop/LeBoidAvidyaizumi/0UTFPR/8/web/Socket/src/test.html")
         //print(file.listFiles().size)
         val count = processCookies()
-        writer.write("HTTP/1.1 401\r\n")
-        writer.write("WWW-Authenticate: Basic realm=Test\r\n")
         if (!file.exists() || this.resourcePath == "/") {
             writer.write("HTTP/1.1 404\r\n")
             writer.write("Set-Cookie: $count;\r\n\r\n")
 
             writer.write("ERRO: Arquivo nao encotrado")
         } else if (file.isDirectory) {
+            writer.write("HTTP/1.1 401\r\n")
+            writer.write("WWW-Authenticate: Basic realm=Test\r\n\r\n")
+            writer.flush()
+            val connection = this.mySocket.accept()
+            val reader = BufferedReader(InputStreamReader(connection.getInputStream()))
+            val writer1 = BufferedWriter(OutputStreamWriter(connection.getOutputStream()))
+            var aut = reader.readLine()
+            while (reader.ready()) {
+                aut += "\n"
+                aut += reader.readLine()
+            }
+            println("\n\nAUT: " + aut)
+
             //file.listFiles()
-            writer.write("HTTP/1.1 200 \r\n")
-            writer.write("Set-Cookie: $count;\r\n\r\n")
+            writer1.write("HTTP/1.1 200 \r\n")
+            writer1.write("Set-Cookie: $count;\r\n\r\n")
 
             val fileList = fileList(file)
-            writer.write("Arquivos de " + fileList[0] + ":\n")
+            writer1.write("Arquivos de " + fileList[0] + ":\n")
             for (i in 1..(fileList.size - 1)) {
-                writer.write("/" + fileList[i] + "\n")
+                writer1.write("/" + fileList[i] + "\n")
             }
+            writer1.flush()
+            connection.close()
+
         } else {
             writer.write("HTTP/1.1 200 \r\n")
             writer.write("Set-Cookie: $count;\r\n\r\n")
@@ -132,7 +147,7 @@ class Server {
                     this.processHeader(reader)
 
                     when (this.method) {
-                        Method.GET -> this.responseGet(writer)
+                        Method.GET -> this.responseGet(writer/*, reader*/)
                     }
 
                     print(headerMap)
