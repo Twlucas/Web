@@ -1,5 +1,6 @@
 import java.io.*
 import java.net.*
+import java.text.SimpleDateFormat
 
 
 class Server {
@@ -64,10 +65,11 @@ class Server {
         return "count=1"
     }
 
-    private fun fileList(directory: File): List<String> {
-        val fileList = mutableListOf<String>()
+    private fun fileList(directory: File): Array<File> {
+        val fileList = directory.listFiles()
 
-        var filePath = directory.toString()
+        return fileList
+        /*var filePath = directory.toString()
         var init = filePath.lastIndexOf("\\")
         var fileName =  filePath.substring(init + 1)
         fileList.add(fileName)
@@ -80,7 +82,7 @@ class Server {
             fileName = filePath.substring(init + 1)
             fileList.add(fileName)
         }
-        return fileList
+        return fileList*/
     }
 
     private fun responseGet(writer: BufferedWriter/*, reader: BufferedReader*/) {
@@ -112,9 +114,10 @@ class Server {
             writer1.write("Set-Cookie: $count;\r\n\r\n")
 
             val fileList = fileList(file)
-            writer1.write("Arquivos de " + fileList[0] + ":\n")
-            for (i in 1..(fileList.size - 1)) {
-                writer1.write("/" + fileList[i] + "\n")
+            writer1.write("Arquivos de " + file.name + ":\n")
+            for (item in fileList) {
+                writer1.write("/" + item.name + "\t\t\tModificado em: " +
+                        SimpleDateFormat("dd/MM/yyyy").format(item.lastModified()) + "\n")
             }
             writer1.flush()
             connection.close()
