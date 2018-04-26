@@ -7,12 +7,6 @@ import java.io.PrintStream
 import com.sun.xml.internal.ws.streaming.XMLStreamWriterUtil.getOutputStream
 import java.io.BufferedOutputStream
 
-
-
-
-
-
-
 class Server {
     enum class Method {
         OPTIONS, GET, HEAD, POST, PUT, DELETE, TRACE, CONNECT
@@ -25,24 +19,22 @@ class Server {
     private lateinit var cookieMap: MutableMap<String, String>
 
 
-    /*
-    * @todo
-    * cgi
-    */
-    fun executavel(path: String, params: String? = null, writer: BufferedWriter) {
+    fun executavel(path: String, params: String? = null, writer: PrintStream) {
         val processBuilder: ProcessBuilder = ProcessBuilder()
+
         if(params == null) {
             processBuilder.command(path)
         } else {
             processBuilder.command(path, params)
         }
+
         val process = processBuilder.start()
 
         val reader = BufferedReader(InputStreamReader(process.inputStream))
         var line: String? = reader.readLine()
 
         while(line != null) {
-            writer.write(line)
+            writer.print(line)
             line = reader.readLine()
         }
 
@@ -58,6 +50,7 @@ class Server {
             header += "\n"
             header += reader.readLine()
         }
+
         print("\nHEADER: " + header)
 
         this.headerMap = mutableMapOf()
@@ -100,54 +93,71 @@ class Server {
         return "count=1"
     }
 
-    //private fun authenticate(connection: Socket, )
+    private fun errorMessage(connection: Socket, errorType: String, message: String, title: String,
+                             writer: PrintStream, cookieCount: String) {
+        writer.print("HTTP/1.1 $errorType\r\n")
+        writer.print("Set-Cookie: $cookieCount;\r\n\r\n")
 
-    private fun responseGet(writer: BufferedWriter/*, reader: BufferedReader*/, connection: Socket) {
+        writer.print("<!DOCTYPE html>\r\n" +
+                "<html>\r\n<head>\r\n" +
+                "<title>$title</title>\r\n</head>\r\n" +
+                "<body>\r\n" +
+                "<h1>$message</h1>\r\n" +
+                "<hr><address>FileServer at " +
+                connection.getLocalAddress().getHostName() +
+                " Port " + connection.getLocalPort() + "</address><hr>\r\n" +
+                "</body>\r\n</html>\r\n")
+        writer.flush()
+
+    }
+
+    private fun authenticate(connection: Socket, file: File, cookieCount: String) {
+        val reader = BufferedReader(InputStreamReader(connection.getInputStream()))
+        val writer1 = BufferedWriter(OutputStreamWriter(connection.getOutputStream()))
+
+        var aut = reader.readLine()
+        while (reader.ready()) {
+            aut += "\n"
+            aut += reader.readLine()
+        }
+        println("\n\nAUT: " + aut)
+
+        //file.listFiles()
+        writer1.write("HTTP/1.1 200 \r\n")
+        writer1.write("Set-Cookie: $cookieCount;\r\n\r\n")
+
+        val fileList = file.listFiles()
+        writer1.write("Arquivos de " + file.name + ":\n")
+        for (item in fileList) {
+            writer1.write("/" + item.name + "\t\t\tModificado em: " +
+                    SimpleDateFormat("dd/MM/yyyy").format(item.lastModified()) + "\n")
+        }
+        writer1.flush()
+        connection.close()
+    }
+
+    private fun responseGet(writer: PrintStream/*, reader: BufferedReader*/, connection: Socket) {
         val file = File("C:"+this.resourcePath)
+
         //file = File("C:/Users/Lucas/Desktop/LeBoidAvidyaizumi/0UTFPR/8/web/Socket/src/test.html")
         //print(file.listFiles().size)
+
         val count = processCookies()
+
         if (!file.exists() || this.resourcePath == "/") {
-            writer.write("HTTP/1.1 404\r\n")
-            writer.write("Set-Cookie: $count;\r\n\r\n")
-
-            writer.write("ERRO: Arquivo nao encotrado")
+            errorMessage(connection, "404", "Arquivo não encontrado!", "Error 404", writer, count)
         } else if (file.isDirectory) {
-            writer.write("HTTP/1.1 401\r\n")
-            writer.write("WWW-Authenticate: Basic realm=Aut\r\n\r\n")
+            writer.print("HTTP/1.1 401\r\n")
+            writer.print("WWW-Authenticate: Basic realm=Aut\r\n\r\n")
             writer.flush()
-
             val connection = this.mySocket.accept()
-            val reader = BufferedReader(InputStreamReader(connection.getInputStream()))
-            val writer1 = BufferedWriter(OutputStreamWriter(connection.getOutputStream()))
 
-            var aut = reader.readLine()
-            while (reader.ready()) {
-                aut += "\n"
-                aut += reader.readLine()
-            }
-            println("\n\nAUT: " + aut)
-
-            //file.listFiles()
-            writer1.write("HTTP/1.1 200 \r\n")
-            writer1.write("Set-Cookie: $count;\r\n\r\n")
-
-            val fileList = file.listFiles()
-            writer1.write("Arquivos de " + file.name + ":\n")
-            for (item in fileList) {
-                writer1.write("/" + item.name + "\t\t\tModificado em: " +
-                        SimpleDateFormat("dd/MM/yyyy").format(item.lastModified()) + "\n")
-            }
-            writer1.flush()
-            connection.close()
-
+            authenticate(connection, file, count)
         } else if(file.name.substringAfterLast('.') == "exe") {
-
             executavel(file.path, null, writer)
-
         } else {
-            writer.write("HTTP/1.1 200 \r\n")
-            writer.write("Set-Cookie: $count;\r\n")
+            writer.print("HTTP/1.1 200 \r\n")
+            writer.print("Set-Cookie: $count;\r\n")
 
             val contentType = when (file.name.substringAfterLast('.')) {
                 "jpg" -> "image/jpeg"
@@ -157,10 +167,10 @@ class Server {
                 else -> "application/octet-stream"
             }
 
-            writer.write("Content-Type: $contentType\r\n")
+            writer.print("Content-Type: $contentType\r\n")
 
             val fileBytes = file.readBytes()
-            writer.write("Content-Length: ${fileBytes.size}\r\n\r\n")
+            writer.print("Content-Length: ${fileBytes.size}\r\n\r\n")
             connection.getOutputStream().write(fileBytes)
             writer.flush()
 
@@ -173,12 +183,13 @@ class Server {
 
         while(true) {
             val connection = this.mySocket.accept()
+
             if (connection != null) {
                 Thread({
                     val reader = BufferedReader(InputStreamReader(connection.getInputStream()))
-                    val writer = BufferedWriter(OutputStreamWriter(connection.getOutputStream()))
+                    //val writer = BufferedWriter(OutputStreamWriter(connection.getOutputStream()))
                     val out = BufferedOutputStream(connection.getOutputStream())
-                    //val writer = PrintStream(out)
+                    val writer = PrintStream(out)
 
                     this.processHeader(reader)
 
