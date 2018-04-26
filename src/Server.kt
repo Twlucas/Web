@@ -4,7 +4,6 @@ import java.text.SimpleDateFormat
 import java.io.InputStreamReader
 import java.io.BufferedReader
 import java.io.PrintStream
-import com.sun.xml.internal.ws.streaming.XMLStreamWriterUtil.getOutputStream
 import java.io.BufferedOutputStream
 
 class Server {
@@ -50,8 +49,6 @@ class Server {
             header += "\n"
             header += reader.readLine()
         }
-
-        print("\nHEADER: " + header)
 
         this.headerMap = mutableMapOf()
         this.cookieMap = mutableMapOf()
@@ -104,36 +101,65 @@ class Server {
                 "<body>\r\n" +
                 "<h1>$message</h1>\r\n" +
                 "<hr><address>FileServer at " +
-                connection.getLocalAddress().getHostName() +
-                " Port " + connection.getLocalPort() + "</address><hr>\r\n" +
+                connection.localAddress.hostName +
+                " Port " + connection.localPort + "</address><hr>\r\n" +
                 "</body>\r\n</html>\r\n")
         writer.flush()
 
     }
 
-    private fun authenticate(connection: Socket, file: File, cookieCount: String) {
-        val reader = BufferedReader(InputStreamReader(connection.getInputStream()))
-        val writer1 = BufferedWriter(OutputStreamWriter(connection.getOutputStream()))
+    private fun dispayFilesTable(connection: Socket, file: File, cookieCount: String) {
+        val writer = BufferedWriter(OutputStreamWriter(connection.getOutputStream()))
 
-        var aut = reader.readLine()
-        while (reader.ready()) {
-            aut += "\n"
-            aut += reader.readLine()
-        }
-        println("\n\nAUT: " + aut)
+        writer.write("HTTP/1.1 200 \r\n")
+        writer.write("Set-Cookie: $cookieCount;\r\n\r\n")
 
-        //file.listFiles()
-        writer1.write("HTTP/1.1 200 \r\n")
-        writer1.write("Set-Cookie: $cookieCount;\r\n\r\n")
+        //val headTable = File("..\\frontEnd\\tableHead.html")
+        //writer.write(headTable.readText())
+        writer.write("<!DOCTYPE html>\n" +
+                "<html>\n" +
+                "<head>\n" +
+                "    <style>\n" +
+                "table, th, td {\n" +
+                "    border: 1px solid black;\n" +
+                "    border-collapse: collapse;\n" +
+                "}\n" +
+                "th, td {\n" +
+                "    padding: 5px;\n" +
+                "    text-align: left;\n" +
+                "}\n" +
+                "</style>\n" +
+                "</head>")
+        writer.write("<h2>Arquivos de " + file.name + "</h2>")
+        writer.write("<table style=\"width:100%\">" +
+                "<caption>Arquivos</caption>\n")
+        writer.write("<tr>\n" +
+                "<th>Nome</th>\n" +
+                "<th>Modificado</th>\n" +
+                "<th>Tamanho</th>\n" +
+                "</tr>\n" +
+                "</html>")
 
         val fileList = file.listFiles()
-        writer1.write("Arquivos de " + file.name + ":\n")
+
         for (item in fileList) {
-            writer1.write("/" + item.name + "\t\t\tModificado em: " +
-                    SimpleDateFormat("dd/MM/yyyy").format(item.lastModified()) + "\n")
+            writer.write("<tr>\n" +
+                    "<td><a href=\"http://www.localhost:5555/" + item.absolutePath.substringAfter("C:\\").replace("\\", "/")
+                    + "\";>" + item.name + "</a></td>\n" +
+                    "<td>" + SimpleDateFormat("dd/MM/yyyy").format(item.lastModified()) + "</td>\n" +
+                    "<td>" + item.length() + " bytes</td>\n" +
+                    "</tr>\n")
         }
-        writer1.flush()
+        writer.write("</table>\n" +
+                "</body>\n" +
+                "</html>")
+
+        writer.flush()
         connection.close()
+    }
+
+    private fun authenticate(connection: Socket):Boolean {
+        return headerMap["Authorization"] == "Basic MTIzOjEyMw=="
     }
 
     private fun responseGet(writer: PrintStream/*, reader: BufferedReader*/, connection: Socket) {
@@ -144,15 +170,25 @@ class Server {
 
         val count = processCookies()
 
-        if (!file.exists() || this.resourcePath == "/") {
+        if (!file.exists() /*|| this.resourcePath != "/"*/) {
             errorMessage(connection, "404", "Arquivo não encontrado!", "Error 404", writer, count)
         } else if (file.isDirectory) {
             writer.print("HTTP/1.1 401\r\n")
             writer.print("WWW-Authenticate: Basic realm=Aut\r\n\r\n")
             writer.flush()
-            val connection = this.mySocket.accept()
 
-            authenticate(connection, file, count)
+            val connection = this.mySocket.accept()
+            val reader = BufferedReader(InputStreamReader(connection.getInputStream()))
+
+            this.processHeader(reader)
+
+            if(this.resourcePath == "/") {
+                this.resourcePath = "C:\\Users"
+            }
+
+            if(authenticate(connection)) {
+                dispayFilesTable(connection, file, count)
+            }
         } else if(file.name.substringAfterLast('.') == "exe") {
             executavel(file.path, null, writer)
         } else {
@@ -170,10 +206,11 @@ class Server {
             writer.print("Content-Type: $contentType\r\n")
 
             val fileBytes = file.readBytes()
+
             writer.print("Content-Length: ${fileBytes.size}\r\n\r\n")
-            connection.getOutputStream().write(fileBytes)
             writer.flush()
 
+            connection.getOutputStream().write(fileBytes)
             connection.getOutputStream().flush()
         }
     }
@@ -193,13 +230,18 @@ class Server {
 
                     this.processHeader(reader)
 
+                    println("\nBEFORE:")
+                    println(headerMap)
+
                     when (this.method) {
                         Method.GET -> this.responseGet(writer/*, reader*/, connection)
                     }
-
+                    println("\nAFTER:")
                     print(headerMap)
-                    println("\nCOOKIES: ")
+
+                    println("\nCOOKIES:")
                     print(cookieMap)
+
                     connection.close()
                     reader.close()
                     writer.close()
