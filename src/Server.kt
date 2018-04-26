@@ -1,6 +1,16 @@
 import java.io.*
 import java.net.*
 import java.text.SimpleDateFormat
+import java.io.InputStreamReader
+import java.io.BufferedReader
+import java.io.PrintStream
+import com.sun.xml.internal.ws.streaming.XMLStreamWriterUtil.getOutputStream
+import java.io.BufferedOutputStream
+
+
+
+
+
 
 
 class Server {
@@ -14,6 +24,31 @@ class Server {
     private lateinit var method: Method
     private lateinit var cookieMap: MutableMap<String, String>
 
+
+    /*
+    * @todo
+    * cgi
+    */
+    fun executavel(path: String, params: String? = null, writer: BufferedWriter) {
+        val processBuilder: ProcessBuilder = ProcessBuilder()
+        if(params == null) {
+            processBuilder.command(path)
+        } else {
+            processBuilder.command(path, params)
+        }
+        val process = processBuilder.start()
+
+        val reader = BufferedReader(InputStreamReader(process.inputStream))
+        var line: String? = reader.readLine()
+
+        while(line != null) {
+            writer.write(line)
+            line = reader.readLine()
+        }
+
+        writer.flush()
+
+    }
 
     private fun processHeader(reader: BufferedReader) {
         val firstLine = reader.readLine()
@@ -65,27 +100,9 @@ class Server {
         return "count=1"
     }
 
-    private fun fileList(directory: File): Array<File> {
-        val fileList = directory.listFiles()
+    //private fun authenticate(connection: Socket, )
 
-        return fileList
-        /*var filePath = directory.toString()
-        var init = filePath.lastIndexOf("\\")
-        var fileName =  filePath.substring(init + 1)
-        fileList.add(fileName)
-
-        for (file in directory.listFiles()) {
-            filePath = file.toString()
-            init = filePath.lastIndexOf("\\")
-            //print("\n\nCAMINHO DO NARA\n\n")
-            //print(filePath + "\n\n")
-            fileName = filePath.substring(init + 1)
-            fileList.add(fileName)
-        }
-        return fileList*/
-    }
-
-    private fun responseGet(writer: BufferedWriter/*, reader: BufferedReader*/) {
+    private fun responseGet(writer: BufferedWriter/*, reader: BufferedReader*/, connection: Socket) {
         val file = File("C:"+this.resourcePath)
         //file = File("C:/Users/Lucas/Desktop/LeBoidAvidyaizumi/0UTFPR/8/web/Socket/src/test.html")
         //print(file.listFiles().size)
@@ -97,11 +114,13 @@ class Server {
             writer.write("ERRO: Arquivo nao encotrado")
         } else if (file.isDirectory) {
             writer.write("HTTP/1.1 401\r\n")
-            writer.write("WWW-Authenticate: Basic realm=Test\r\n\r\n")
+            writer.write("WWW-Authenticate: Basic realm=Aut\r\n\r\n")
             writer.flush()
+
             val connection = this.mySocket.accept()
             val reader = BufferedReader(InputStreamReader(connection.getInputStream()))
             val writer1 = BufferedWriter(OutputStreamWriter(connection.getOutputStream()))
+
             var aut = reader.readLine()
             while (reader.ready()) {
                 aut += "\n"
@@ -113,7 +132,7 @@ class Server {
             writer1.write("HTTP/1.1 200 \r\n")
             writer1.write("Set-Cookie: $count;\r\n\r\n")
 
-            val fileList = fileList(file)
+            val fileList = file.listFiles()
             writer1.write("Arquivos de " + file.name + ":\n")
             for (item in fileList) {
                 writer1.write("/" + item.name + "\t\t\tModificado em: " +
@@ -122,19 +141,31 @@ class Server {
             writer1.flush()
             connection.close()
 
+        } else if(file.name.substringAfterLast('.') == "exe") {
+
+            executavel(file.path, null, writer)
+
         } else {
             writer.write("HTTP/1.1 200 \r\n")
-            writer.write("Set-Cookie: $count;\r\n\r\n")
+            writer.write("Set-Cookie: $count;\r\n")
 
-            val content = FileReader(file)
-            val bffct = BufferedReader(content)
-            var line: String
-            while (bffct.ready()) {
-                line = bffct.readLine()
-                writer.write(line)
+            val contentType = when (file.name.substringAfterLast('.')) {
+                "jpg" -> "image/jpeg"
+                "pgn" -> "image/png"
+                "pdf" -> "application/pdf"
+                "mp4" -> "video/mp4"
+                else -> "application/octet-stream"
             }
+
+            writer.write("Content-Type: $contentType\r\n")
+
+            val fileBytes = file.readBytes()
+            writer.write("Content-Length: ${fileBytes.size}\r\n\r\n")
+            connection.getOutputStream().write(fileBytes)
+            writer.flush()
+
+            connection.getOutputStream().flush()
         }
-        writer.flush()
     }
 
     fun run() {
@@ -146,11 +177,13 @@ class Server {
                 Thread({
                     val reader = BufferedReader(InputStreamReader(connection.getInputStream()))
                     val writer = BufferedWriter(OutputStreamWriter(connection.getOutputStream()))
+                    val out = BufferedOutputStream(connection.getOutputStream())
+                    //val writer = PrintStream(out)
 
                     this.processHeader(reader)
 
                     when (this.method) {
-                        Method.GET -> this.responseGet(writer/*, reader*/)
+                        Method.GET -> this.responseGet(writer/*, reader*/, connection)
                     }
 
                     print(headerMap)
@@ -169,4 +202,5 @@ fun main(argv: Array<String>) {
     val server = Server()
 
     server.run()
+    //server.executavel("C:\\Users\\Convidado\\Desktop\\exec\\textexec.exe")
 }
