@@ -5,21 +5,29 @@ import java.io.InputStreamReader
 import java.io.BufferedReader
 import java.io.PrintStream
 import java.io.BufferedOutputStream
+import java.util.Collections.sort
 
 class Server {
     enum class Method {
         OPTIONS, GET, HEAD, POST, PUT, DELETE, TRACE, CONNECT
     }
 
-    private val mySocket = ServerSocket(5555)
+    private lateinit var mySocket: ServerSocket
     private lateinit var headerMap: MutableMap<String, String>
     private lateinit var resourcePath: String
     private lateinit var method: Method
     private lateinit var cookieMap: MutableMap<String, String>
+    private lateinit var paramList: MutableMap<String, String>
+    private var serverList: MutableMap<InetAddress, Int>? = null
+    private var fromServer = false
+    private lateinit var firstLine: String
 
+    fun setServerList(serverList: MutableMap<InetAddress, Int>?){
+        this.serverList = serverList
+    }
 
-    fun executavel(path: String, params: String? = null, writer: PrintStream) {
-        val processBuilder: ProcessBuilder = ProcessBuilder()
+    private fun cgi(path: String, params: String? = null, writer: PrintStream) {
+        val processBuilder = ProcessBuilder()
 
         if(params == null) {
             processBuilder.command(path)
@@ -41,14 +49,18 @@ class Server {
 
     }
 
-    private fun processHeader(reader: BufferedReader) {
-        val firstLine = reader.readLine()
+    private fun processHeader(reader: BufferedReader, test: String? = null) {
+        this.firstLine = reader.readLine()
         var header = reader.readLine()
 
         while (reader.ready()) {
             header += "\n"
             header += reader.readLine()
         }
+
+        /*println("RAWHEADER")
+        print(firstLine)
+        print(header)*/
 
         this.headerMap = mutableMapOf()
         this.cookieMap = mutableMapOf()
@@ -62,6 +74,9 @@ class Server {
                                     .forEach {
                                         cookieMap[it[0]] = it[1] }
                         } else {
+                            if(it[0] == "SERVER-TO-SERVER"){
+                                fromServer = true
+                            }
                             headerMap[it[0]] = it[1]
                         }
                     }
@@ -69,7 +84,35 @@ class Server {
 
         val splm = firstLine.split(" ")
         this.resourcePath = splm[1]
+
+        this.paramList = mutableMapOf()
+
+        if(this.resourcePath.indexOf('?') > -1) {
+            val qparams = this.resourcePath.split('?')
+
+            this.resourcePath = qparams[0]
+
+            this.getParams(qparams[1])
+        }
+
         this.method = Method.valueOf(splm[0])
+    }
+
+    private fun getParams(params: String) {
+        if(params.indexOf('&') > -1) {
+            params.split('&')
+                    .forEach{
+                        val splt = it.split('=')
+                        if (splt.isNotEmpty()){
+                            this.paramList[splt[0]] = splt[1]
+                        }
+                    }
+        } else {
+            val splt = params.split('=')
+            if (splt.isNotEmpty()){
+                this.paramList[splt[0]] = splt[1]
+            }
+        }
     }
 
     private fun processCookies(): String {
@@ -81,9 +124,9 @@ class Server {
                         return if (it.key == "count") {
                             var value = Integer.parseInt(it.value)
                             value++
-                            return "count=$value"
+                            "count=$value"
                         } else {
-                            return "count=1"
+                            "count=1"
                         }
                     }
         }
@@ -114,33 +157,39 @@ class Server {
         writer.write("HTTP/1.1 200 \r\n")
         writer.write("Set-Cookie: $cookieCount;\r\n\r\n")
 
-        //val headTable = File("..\\frontEnd\\tableHead.html")
-        //writer.write(headTable.readText())
-        writer.write("<!DOCTYPE html>\n" +
-                "<html>\n" +
-                "<head>\n" +
-                "    <style>\n" +
-                "table, th, td {\n" +
-                "    border: 1px solid black;\n" +
-                "    border-collapse: collapse;\n" +
-                "}\n" +
-                "th, td {\n" +
-                "    padding: 5px;\n" +
-                "    text-align: left;\n" +
-                "}\n" +
-                "</style>\n" +
-                "</head>")
-        writer.write("<h2>Arquivos de " + file.name + "</h2>")
+        val headTable = File("./view/tableHead.html")
+        writer.write(headTable.readText())
+
+        var fileName = file.name
+
+        if(fileName == "") {
+            fileName = "Home"
+        }
+
+        writer.write("<h2>Arquivos de " + fileName + "</h2>")
+
         writer.write("<table style=\"width:100%\">" +
                 "<caption>Arquivos</caption>\n")
+
         writer.write("<tr>\n" +
-                "<th>Nome</th>\n" +
-                "<th>Modificado</th>\n" +
-                "<th>Tamanho</th>\n" +
+                "<th><a href=\"http://www.localhost:5555/" + file.absolutePath.substringAfter("C:\\").replace("\\", "/")
+                + "?O=N\";>" + "Nome</a></th>\n" +
+                "<th><a href=\"http://www.localhost:5555/" + file.absolutePath.substringAfter("C:\\").replace("\\", "/")
+                + "?O=M\";>" + "Modificado</a></th>\n" +
+                "<th><a href=\"http://www.localhost:5555/" + file.absolutePath.substringAfter("C:\\").replace("\\", "/")
+                + "?O=T\";>" + "Tamanho</a></th>\n" +
                 "</tr>\n" +
                 "</html>")
 
-        val fileList = file.listFiles()
+        val fileList = file.listFiles().asList()
+        //fileList.sort()
+
+        if(paramList.isNotEmpty()) {
+            val type = paramList["O"]
+            sort(fileList, FileSorter(paramList["O"]))
+        } else {
+            sort(fileList, FileSorter())
+        }
 
         for (item in fileList) {
             writer.write("<tr>\n" +
@@ -150,6 +199,7 @@ class Server {
                     "<td>" + item.length() + " bytes</td>\n" +
                     "</tr>\n")
         }
+
         writer.write("</table>\n" +
                 "</body>\n" +
                 "</html>")
@@ -158,42 +208,65 @@ class Server {
         connection.close()
     }
 
-    private fun authenticate(connection: Socket):Boolean {
+    private fun authenticate():Boolean {
         return headerMap["Authorization"] == "Basic MTIzOjEyMw=="
     }
 
     private fun responseGet(writer: PrintStream/*, reader: BufferedReader*/, connection: Socket) {
-        val file = File("C:"+this.resourcePath)
+        if(this.resourcePath == "/index.html") {
+            this.resourcePath = "/"
+        }
 
-        //file = File("C:/Users/Lucas/Desktop/LeBoidAvidyaizumi/0UTFPR/8/web/Socket/src/test.html")
-        //print(file.listFiles().size)
+        val file = File("C:"+this.resourcePath)
 
         val count = processCookies()
 
         if (!file.exists() /*|| this.resourcePath != "/"*/) {
+            if(this.serverList != null && !this.fromServer){
+                //TODO()
+                var rawHeader: String = "$firstLine\r\n"
+                println("MAPERRO")
+
+                this.headerMap.forEach {
+                    rawHeader += it.key + ": " + it.value + "\r\n"
+                }
+
+                rawHeader += "Cookie: "
+                this.cookieMap.forEach {
+                    rawHeader += it.key + "=" + it.value + ";"
+                }
+
+                rawHeader = rawHeader.substring(0, rawHeader.lastIndex)
+
+                rawHeader += "SERVER-TO-SERVER: true\r\n\r\n"
+
+                serverList!!.forEach {
+                    val newServerSocket = Socket(it.key, it.value)
+                    newServerSocket.getOutputStream().write(rawHeader.toByteArray())
+                    val serverReader = BufferedReader(InputStreamReader(newServerSocket.getInputStream()))
+                }
+            }
             errorMessage(connection, "404", "Arquivo não encontrado!", "Error 404", writer, count)
         } else if (file.isDirectory) {
             writer.print("HTTP/1.1 401\r\n")
             writer.print("WWW-Authenticate: Basic realm=Aut\r\n\r\n")
             writer.flush()
 
-            val connection = this.mySocket.accept()
-            val reader = BufferedReader(InputStreamReader(connection.getInputStream()))
+            val newConnection = this.mySocket.accept()
+            val reader = BufferedReader(InputStreamReader(newConnection.getInputStream()))
 
             this.processHeader(reader)
 
-            if(this.resourcePath == "/") {
-                this.resourcePath = "C:\\Users"
-            }
-
-            if(authenticate(connection)) {
-                dispayFilesTable(connection, file, count)
-            }
+            //if(authenticate()) {
+                dispayFilesTable(newConnection, file, count)
+            //}
         } else if(file.name.substringAfterLast('.') == "exe") {
-            executavel(file.path, null, writer)
+            cgi(file.path, null, writer)
         } else {
             writer.print("HTTP/1.1 200 \r\n")
+            var strResponse = "HTTP/1.1 200 \n"
             writer.print("Set-Cookie: $count;\r\n")
+            strResponse += "Set-Cookie: $count;\n"
 
             val contentType = when (file.name.substringAfterLast('.')) {
                 "jpg" -> "image/jpeg"
@@ -204,25 +277,34 @@ class Server {
             }
 
             writer.print("Content-Type: $contentType\r\n")
+            strResponse += "Content-Type: $contentType\r\n"
 
             val fileBytes = file.readBytes()
 
             writer.print("Content-Length: ${fileBytes.size}\r\n\r\n")
             writer.flush()
+            strResponse += "Content-Length: ${fileBytes.size}\r\n\r\n"
 
             connection.getOutputStream().write(fileBytes)
             connection.getOutputStream().flush()
+            strResponse += fileBytes
+
+            println("STRRESPONSE")
+            println(strResponse)
         }
     }
 
     fun run() {
+        mySocket = ServerSocket(5555)
         print("Server on \n\n")
 
         while(true) {
             val connection = this.mySocket.accept()
+            println("Accepted")
 
             if (connection != null) {
                 Thread({
+                    this.fromServer = false
                     val reader = BufferedReader(InputStreamReader(connection.getInputStream()))
                     //val writer = BufferedWriter(OutputStreamWriter(connection.getOutputStream()))
                     val out = BufferedOutputStream(connection.getOutputStream())
@@ -230,22 +312,31 @@ class Server {
 
                     this.processHeader(reader)
 
-                    println("\nBEFORE:")
-                    println(headerMap)
+                    //println("\n" + headerMap)
 
                     when (this.method) {
                         Method.GET -> this.responseGet(writer/*, reader*/, connection)
+                        Method.OPTIONS -> TODO()
+                        Method.HEAD -> TODO()
+                        Method.POST -> TODO()
+                        Method.PUT -> TODO()
+                        Method.DELETE -> TODO()
+                        Method.TRACE -> TODO()
+                        Method.CONNECT -> TODO()
                     }
-                    println("\nAFTER:")
-                    print(headerMap)
 
-                    println("\nCOOKIES:")
-                    print(cookieMap)
+                    //print("\n" + headerMap)
+
+                    //println("\nCOOKIES:")
+                    //print(cookieMap)
+
+                    //println("\nPARAMS\n")
+                    //print(paramList)
 
                     connection.close()
                     reader.close()
                     writer.close()
-                }).run()
+                }).start()//.run()
             }
         }
     }
@@ -254,6 +345,33 @@ class Server {
 fun main(argv: Array<String>) {
     val server = Server()
 
+    val echoServer = EchoServer(server)
+
+    echoServer.run()
+
+    server.setServerList(echoServer.getServerList())
     server.run()
-    //server.executavel("C:\\Users\\Convidado\\Desktop\\exec\\textexec.exe")
+
+    /*val file = File("C:/Users/Convidado/Desktop/exec")
+    val files = file.listFiles()
+    val mu = files.asList()
+    val fl = FileSorter()
+    sort(mu, fl)
+    mu.forEach({
+        println(it.nameWithoutExtension)
+    })*/
+    //EchoServer().run()
+    //Broadcasting.broadcast("LUL")
+    Thread.sleep(2000)
+    println("Sleep")
+    val dPort = 5554
+    val address = InetAddress.getByName("255.255.255.255")
+
+    val msg = "SD5556 8080\n".toByteArray()
+    val sendPacket = DatagramPacket(msg, msg.size, address, dPort)
+
+    val sendSocket = DatagramSocket()
+    sendSocket.send(sendPacket)
+    Thread.sleep(1000)
+    println("Lst" + echoServer.getServerList())
 }
