@@ -12,6 +12,8 @@ class Server {
         OPTIONS, GET, HEAD, POST, PUT, DELETE, TRACE, CONNECT
     }
 
+    private val httpPort = 5555
+    //private val httpPort = 5555
     private lateinit var mySocket: ServerSocket
     private lateinit var headerMap: MutableMap<String, String>
     private lateinit var resourcePath: String
@@ -23,7 +25,9 @@ class Server {
     private lateinit var firstLine: String
 
     fun setServerList(serverList: MutableMap<InetAddress, Int>?){
+        println("SERVERLIST")
         this.serverList = serverList
+        println(this.serverList)
     }
 
     private fun cgi(path: String, params: String? = null, writer: PrintStream) {
@@ -172,11 +176,11 @@ class Server {
                 "<caption>Arquivos</caption>\n")
 
         writer.write("<tr>\n" +
-                "<th><a href=\"http://www.localhost:5555/" + file.absolutePath.substringAfter("C:\\").replace("\\", "/")
+                "<th><a href=\"http://www.localhost:$httpPort/" + file.absolutePath.substringAfter("C:\\").replace("\\", "/")
                 + "?O=N\";>" + "Nome</a></th>\n" +
-                "<th><a href=\"http://www.localhost:5555/" + file.absolutePath.substringAfter("C:\\").replace("\\", "/")
+                "<th><a href=\"http://www.localhost:$httpPort/" + file.absolutePath.substringAfter("C:\\").replace("\\", "/")
                 + "?O=M\";>" + "Modificado</a></th>\n" +
-                "<th><a href=\"http://www.localhost:5555/" + file.absolutePath.substringAfter("C:\\").replace("\\", "/")
+                "<th><a href=\"http://www.localhost:$httpPort/" + file.absolutePath.substringAfter("C:\\").replace("\\", "/")
                 + "?O=T\";>" + "Tamanho</a></th>\n" +
                 "</tr>\n" +
                 "</html>")
@@ -193,7 +197,7 @@ class Server {
 
         for (item in fileList) {
             writer.write("<tr>\n" +
-                    "<td><a href=\"http://www.localhost:5555/" + item.absolutePath.substringAfter("C:\\").replace("\\", "/")
+                    "<td><a href=\"http://www.localhost:$httpPort/" + item.absolutePath.substringAfter("C:\\").replace("\\", "/")
                     + "\";>" + item.name + "</a></td>\n" +
                     "<td>" + SimpleDateFormat("dd/MM/yyyy").format(item.lastModified()) + "</td>\n" +
                     "<td>" + item.length() + " bytes</td>\n" +
@@ -212,6 +216,10 @@ class Server {
         return headerMap["Authorization"] == "Basic MTIzOjEyMw=="
     }
 
+    private fun hasError(line: String?): Boolean {
+        return line == "HTTP/1.1 404\r\n"
+    }
+
     private fun responseGet(writer: PrintStream/*, reader: BufferedReader*/, connection: Socket) {
         if(this.resourcePath == "/index.html") {
             this.resourcePath = "/"
@@ -221,9 +229,9 @@ class Server {
 
         val count = processCookies()
 
-        if (!file.exists() /*|| this.resourcePath != "/"*/) {
+        if (!file.exists()) {
+            var hasSend = false
             if(this.serverList != null && !this.fromServer){
-                //TODO()
                 var rawHeader: String = "$firstLine\r\n"
                 println("MAPERRO")
 
@@ -237,16 +245,32 @@ class Server {
                 }
 
                 rawHeader = rawHeader.substring(0, rawHeader.lastIndex)
+                rawHeader += "\r\n"
 
                 rawHeader += "SERVER-TO-SERVER: true\r\n\r\n"
+
+                println("ServerLIst: $serverList")
 
                 serverList!!.forEach {
                     val newServerSocket = Socket(it.key, it.value)
                     newServerSocket.getOutputStream().write(rawHeader.toByteArray())
-                    val serverReader = BufferedReader(InputStreamReader(newServerSocket.getInputStream()))
+                    val newServerReader = BufferedReader(InputStreamReader(newServerSocket.getInputStream()))
+                    val fline = newServerReader.readLine()
+                    if(hasError(fline)) {
+                        //TODO()
+                    } else {
+                        writer.print(fline)
+                        writer.print(newServerReader.readText())
+                        writer.flush()
+                        hasSend = true
+                        return@forEach
+                        //TODO()
+                    }
                 }
             }
-            errorMessage(connection, "404", "Arquivo não encontrado!", "Error 404", writer, count)
+            if(!hasSend) {
+                errorMessage(connection, "404", "Arquivo não encontrado!", "Error 404", writer, count)
+            }
         } else if (file.isDirectory) {
             writer.print("HTTP/1.1 401\r\n")
             writer.print("WWW-Authenticate: Basic realm=Aut\r\n\r\n")
@@ -295,7 +319,7 @@ class Server {
     }
 
     fun run() {
-        mySocket = ServerSocket(5555)
+        mySocket = ServerSocket(httpPort)
         print("Server on \n\n")
 
         while(true) {
@@ -362,7 +386,7 @@ fun main(argv: Array<String>) {
     })*/
     //EchoServer().run()
     //Broadcasting.broadcast("LUL")
-    Thread.sleep(2000)
+    /*Thread.sleep(2000)
     println("Sleep")
     val dPort = 5554
     val address = InetAddress.getByName("255.255.255.255")
@@ -373,5 +397,5 @@ fun main(argv: Array<String>) {
     val sendSocket = DatagramSocket()
     sendSocket.send(sendPacket)
     Thread.sleep(1000)
-    println("Lst" + echoServer.getServerList())
+    println("Lst" + echoServer.getServerList())*/
 }

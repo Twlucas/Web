@@ -13,7 +13,9 @@ object Broadcasting {
     fun broadcast(
             broadcastMessage: String,
             address: InetAddress = InetAddress.getByName("255.255.255.255")) {
-        val socket = DatagramSocket()
+        val socket = DatagramSocket(5554)
+        //val socket = DatagramSocket()
+        //socket.connect(address, 5554)
         socket.broadcast = true
 
         val buffer = broadcastMessage.toByteArray()

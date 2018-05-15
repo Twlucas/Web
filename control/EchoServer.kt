@@ -3,10 +3,13 @@ import java.net.DatagramPacket
 import java.net.InetAddress
 import java.net.DatagramSocket
 
-class EchoServer(val server: Server?) : Thread() {
+class EchoServer(private val server: Server?) : Thread() {
     private val broadcastPort = 5554
     private val responsePort = 5556
     private val httpPort = 5555
+    //private val broadcastPort = 5554
+    //private val responsePort = 5556
+    //private val httpPort = 5555
     private val address = InetAddress.getByName("255.255.255.255")
     private lateinit var serverList: MutableMap<InetAddress, Int>
 
@@ -91,10 +94,11 @@ class EchoServer(val server: Server?) : Thread() {
 
                 dPort = packetData(received, "AD")
 
-                val msg = "AD8080\n".toByteArray()
+                val msg = "AD$httpPort\n".toByteArray()
                 val sendPacket = DatagramPacket(msg, msg.size, address, dPort)
 
                 val sendSocket = DatagramSocket()
+                sendSocket.broadcast = true
                 sendSocket.send(sendPacket)
             }
         }).start()
