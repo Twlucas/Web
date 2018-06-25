@@ -15,6 +15,7 @@ object Broadcasting {
             address: InetAddress = InetAddress.getByName("255.255.255.255")) {
         val socket = DatagramSocket(5554)
         //val socket = DatagramSocket()
+        //val socket = DatagramSocket()
         //socket.connect(address, 5554)
         socket.broadcast = true
 
