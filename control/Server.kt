@@ -6,6 +6,7 @@ import java.io.BufferedReader
 import java.io.PrintStream
 import java.io.BufferedOutputStream
 import java.util.Collections.sort
+import java.lang.Thread.sleep
 
 class Server {
     enum class Method {
@@ -53,7 +54,7 @@ class Server {
 
     }
 
-    private fun processHeader(reader: BufferedReader, test: String? = null) {
+    private fun processHeader(reader: BufferedReader) {
         this.firstLine = reader.readLine()
         var header = reader.readLine()
 
@@ -62,9 +63,9 @@ class Server {
             header += reader.readLine()
         }
 
-        /*println("RAWHEADER")
+        println("RAWHEADER")
         print(firstLine)
-        print(header)*/
+        print(header)
 
         this.headerMap = mutableMapOf()
         this.cookieMap = mutableMapOf()
@@ -88,6 +89,8 @@ class Server {
 
         val splm = firstLine.split(" ")
         this.resourcePath = splm[1]
+
+        this.resourcePath = this.resourcePath.replace("%20", " ")
 
         this.paramList = mutableMapOf()
 
@@ -139,23 +142,31 @@ class Server {
 
     private fun errorMessage(connection: Socket, errorType: String, message: String, title: String,
                              writer: PrintStream, cookieCount: String) {
-        writer.print("HTTP/1.1 $errorType\r\n")
-        writer.print("Set-Cookie: $cookieCount;\r\n\r\n")
+        if(errorType == "404") {
+            writer.print("HTTP/1.1 $errorType\r\n")
+            writer.print("Set-Cookie: $cookieCount;\r\n\r\n")
 
-        writer.print("<!DOCTYPE html>\r\n" +
-                "<html>\r\n<head>\r\n" +
-                "<title>$title</title>\r\n</head>\r\n" +
-                "<body>\r\n" +
-                "<h1>$message</h1>\r\n" +
-                "<hr><address>FileServer at " +
-                connection.localAddress.hostName +
-                " Port " + connection.localPort + "</address><hr>\r\n" +
-                "</body>\r\n</html>\r\n")
-        writer.flush()
+            writer.print(File("./view/form404.html").readText())
+            writer.flush()
+        } else {
+            writer.print("HTTP/1.1 $errorType\r\n")
+            writer.print("Set-Cookie: $cookieCount;\r\n\r\n")
+
+            writer.print("<!DOCTYPE html>\r\n" +
+                    "<html>\r\n<head>\r\n" +
+                    "<title>$title</title>\r\n</head>\r\n" +
+                    "<body>\r\n" +
+                    "<h1>$message</h1>\r\n" +
+                    "<hr><address>FileServer at " +
+                    connection.localAddress.hostName +
+                    " Port " + connection.localPort + "</address><hr>\r\n" +
+                    "</body>\r\n</html>\r\n")
+            writer.flush()
+        }
 
     }
 
-    private fun dispayFilesTable(connection: Socket, file: File, cookieCount: String) {
+    private fun displayFilesTable(connection: Socket, file: File, cookieCount: String) {
         val writer = BufferedWriter(OutputStreamWriter(connection.getOutputStream()))
 
         writer.write("HTTP/1.1 200 \r\n")
@@ -170,20 +181,21 @@ class Server {
             fileName = "Home"
         }
 
-        writer.write("<h2>Arquivos de " + fileName + "</h2>")
+        writer.write("\n<h2>Arquivos de " + fileName + "</h2>\n")
 
-        writer.write("<table style=\"width:100%\">" +
+        writer.write("<div class=\"container\">\n")
+
+        writer.write("\n<table class=\"table table-sm table-bordered table-hover\" style=\"width:100%\">" +
                 "<caption>Arquivos</caption>\n")
 
+        val host = headerMap["Host"]
+        writer.write("<thead class=\"thead-light\">\n")
         writer.write("<tr>\n" +
-                "<th><a href=\"http://www.localhost:$httpPort/" + file.absolutePath.substringAfter("C:\\").replace("\\", "/")
-                + "?O=N\";>" + "Nome</a></th>\n" +
-                "<th><a href=\"http://www.localhost:$httpPort/" + file.absolutePath.substringAfter("C:\\").replace("\\", "/")
-                + "?O=M\";>" + "Modificado</a></th>\n" +
-                "<th><a href=\"http://www.localhost:$httpPort/" + file.absolutePath.substringAfter("C:\\").replace("\\", "/")
-                + "?O=T\";>" + "Tamanho</a></th>\n" +
-                "</tr>\n" +
-                "</html>")
+                "<th><a href=\"http://$host$resourcePath" + "?O=N\";>" + "Nome</a></th>\n" +
+                "<th><a href=\"http://$host$resourcePath" + "?O=M\";>" + "Modificado</a></th>\n" +
+                "<th><a href=\"http://$host$resourcePath" + "?O=T\";>" + "Tamanho</a></th>\n" +
+                "</tr>\n")
+        writer.write("</thead>\n")
 
         val fileList = file.listFiles().asList()
         //fileList.sort()
@@ -195,16 +207,22 @@ class Server {
             sort(fileList, FileSorter())
         }
 
+        if(this.resourcePath[resourcePath.length-1] == '/') {
+            resourcePath = resourcePath.substring(0, resourcePath.length-1)
+        }
+
         for (item in fileList) {
+            println("\n\n\nFILEPATH:::::: http://$host/${item.path.replace("\\", "/")}" + "\n" + item.name + "\n\n\n")
             writer.write("<tr>\n" +
-                    "<td><a href=\"http://www.localhost:$httpPort/" + item.absolutePath.substringAfter("C:\\").replace("\\", "/")
-                    + "\";>" + item.name + "</a></td>\n" +
+                    "<td><a href=\"http://$host/${item.path.replace("\\", "/")}\";>" + item.name + "</a></td>\n" +
+                    //"<td><a href=\"http://$host$resourcePath/" + item.name + "\";>" + item.name + "</a></td>\n" +
                     "<td>" + SimpleDateFormat("dd/MM/yyyy").format(item.lastModified()) + "</td>\n" +
                     "<td>" + item.length() + " bytes</td>\n" +
                     "</tr>\n")
         }
 
         writer.write("</table>\n" +
+                "</div>\n" +
                 "</body>\n" +
                 "</html>")
 
@@ -213,19 +231,26 @@ class Server {
     }
 
     private fun authenticate():Boolean {
-        return headerMap["Authorization"] == "Basic MTIzOjEyMw=="
+        return if(headerMap["Authorization"] != null) {
+            headerMap["Authorization"] == "Basic MTIzOjEyMw=="
+        } else
+            false
     }
 
-    private fun hasError(line: String?): Boolean {
-        return line == "HTTP/1.1 404\r\n"
+    private fun hasError(line: String): Boolean {
+        return line.indexOf("HTTP/1.1 404") > -1
     }
 
     private fun responseGet(writer: PrintStream/*, reader: BufferedReader*/, connection: Socket) {
         if(this.resourcePath == "/index.html") {
-            this.resourcePath = "/"
+            this.resourcePath = ""
         }
 
-        val file = File("C:"+this.resourcePath)
+        var file = File(this.resourcePath)
+
+        if (!file.exists()) {
+            file = File("C:" + this.resourcePath)
+        }
 
         val count = processCookies()
 
@@ -257,14 +282,14 @@ class Server {
                     val newServerReader = BufferedReader(InputStreamReader(newServerSocket.getInputStream()))
                     val fline = newServerReader.readLine()
                     if(hasError(fline)) {
-                        //TODO()
+                        hasSend = false
+                        println("FALSEANO")
                     } else {
                         writer.print(fline)
                         writer.print(newServerReader.readText())
                         writer.flush()
                         hasSend = true
                         return@forEach
-                        //TODO()
                     }
                 }
             }
@@ -272,25 +297,28 @@ class Server {
                 errorMessage(connection, "404", "Arquivo não encontrado!", "Error 404", writer, count)
             }
         } else if (file.isDirectory) {
-            writer.print("HTTP/1.1 401\r\n")
-            writer.print("WWW-Authenticate: Basic realm=Aut\r\n\r\n")
-            writer.flush()
+            if(authenticate() || !this.cookieMap["count"].isNullOrEmpty()) {
+                displayFilesTable(connection, file, count)
+            } else {
+                var strResponse = "HTTP/1.1 401\r\n"
 
-            val newConnection = this.mySocket.accept()
-            val reader = BufferedReader(InputStreamReader(newConnection.getInputStream()))
+                writer.print("HTTP/1.1 401\r\n")
+                writer.print("WWW-Authenticate: Basic\r\n\r\n")
 
-            this.processHeader(reader)
+                writer.flush()
 
-            //if(authenticate()) {
-                dispayFilesTable(newConnection, file, count)
-            //}
+                strResponse += "WWW-Authenticate: Basic\"\r\n\r\n"
+
+                println("SEND1")
+                println(strResponse)
+            }
         } else if(file.name.substringAfterLast('.') == "exe") {
             cgi(file.path, null, writer)
         } else {
-            writer.print("HTTP/1.1 200 \r\n")
-            var strResponse = "HTTP/1.1 200 \n"
+            writer.print("HTTP/1.1 200\r\n")
+            var strResponse = "HTTP/1.1 200\r\n"
             writer.print("Set-Cookie: $count;\r\n")
-            strResponse += "Set-Cookie: $count;\n"
+            strResponse += "Set-Cookie: $count;\r\n"
 
             val contentType = when (file.name.substringAfterLast('.')) {
                 "jpg" -> "image/jpeg"
@@ -301,12 +329,14 @@ class Server {
             }
 
             writer.print("Content-Type: $contentType\r\n")
+
             strResponse += "Content-Type: $contentType\r\n"
 
             val fileBytes = file.readBytes()
 
             writer.print("Content-Length: ${fileBytes.size}\r\n\r\n")
             writer.flush()
+
             strResponse += "Content-Length: ${fileBytes.size}\r\n\r\n"
 
             connection.getOutputStream().write(fileBytes)
@@ -316,6 +346,18 @@ class Server {
             println("STRRESPONSE")
             println(strResponse)
         }
+        println("SEND")
+    }
+
+    private fun responsePost(writer: PrintStream, connection: Socket) {
+        val count = processCookies()
+
+        writer.print("HTTP/1.1 200\r\n")
+        writer.print("Set-Cookie: $count;\r\n\r\n")
+
+        writer.print(File("./view/form404.html").readText())
+        writer.flush()
+
     }
 
     fun run() {
@@ -327,22 +369,34 @@ class Server {
             println("Accepted")
 
             if (connection != null) {
-                Thread({
+                Thread {
                     this.fromServer = false
+
                     val reader = BufferedReader(InputStreamReader(connection.getInputStream()))
+
+                    //val reader = BufferedInputStream(connection.getInputStream())
+
                     //val writer = BufferedWriter(OutputStreamWriter(connection.getOutputStream()))
+
                     val out = BufferedOutputStream(connection.getOutputStream())
+
                     val writer = PrintStream(out)
+                    println("PROCESS")
 
                     this.processHeader(reader)
 
-                    //println("\n" + headerMap)
+                    println("\nMAP")
+                    println(this.resourcePath)
+                    println("\n" + this.headerMap)
+
+                    println("COOKIE")
+                    println("\n" + this.cookieMap)
 
                     when (this.method) {
                         Method.GET -> this.responseGet(writer/*, reader*/, connection)
                         Method.OPTIONS -> TODO()
                         Method.HEAD -> TODO()
-                        Method.POST -> TODO()
+                        Method.POST -> this.responsePost(writer, connection)
                         Method.PUT -> TODO()
                         Method.DELETE -> TODO()
                         Method.TRACE -> TODO()
@@ -360,7 +414,7 @@ class Server {
                     connection.close()
                     reader.close()
                     writer.close()
-                }).start()//.run()
+                }.start()//.run()
             }
         }
     }
